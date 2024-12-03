@@ -1,0 +1,2 @@
+[08/11/2024 01:12:30] [Pabellon] medico: hola[styles:false,false,false,0,0,0]
+[08/11/2024 01:13:59] [Pabellon] Pedro: hola[styles:false,false,false,0,0,0]
