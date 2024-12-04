@@ -12,38 +12,100 @@ import java.util.concurrent.TimeUnit;
 import java.util.zip.*;
 
 public class ServidorChat {
+    public static final int PUERTO_PRIMARIO = 5000;
+    public static final int PUERTO_SECUNDARIO = 5001;
+    private static final long HEARTBEAT_INTERVAL = 5000; // 5 segundos
+    
     public static Map<String, Usuario> usuariosRegistrados = new HashMap<>();
     public static Map<String, HiloDeCliente> usuariosConectados = new HashMap<>();
     public static List<HiloDeCliente> hilosClientes = Collections.synchronizedList(new ArrayList<>());
     private ScheduledExecutorService scheduler;
+    private ServerSocket socketServidor;
+    private boolean esPrimario;
+    private volatile boolean ejecutando = true;
 
     public static void main(String[] args) {
-        new ServidorChat();
+        // Intentar iniciar como servidor primario
+        try {
+            new ServidorChat(PUERTO_PRIMARIO);
+        } catch (IOException e) {
+            System.out.println("Puerto primario ocupado, iniciando como servidor secundario...");
+            try {
+                new ServidorChat(PUERTO_SECUNDARIO);
+            } catch (IOException ex) {
+                System.out.println("No se puede iniciar el servidor: " + ex.getMessage());
+            }
+        }
     }
 
-    public ServidorChat() {
+    public ServidorChat(int puerto) throws IOException {
+        this.esPrimario = (puerto == PUERTO_PRIMARIO);
+        this.socketServidor = new ServerSocket(puerto);
+        
         cargarUsuariosDesdeArchivo();
+        iniciarRespaldoAutomatico();
+        iniciarServidorHeartbeat();
+        aceptarClientes();
+        
+        System.out.println("Servidor " + (esPrimario ? "primario" : "secundario") + 
+                          " iniciado en puerto " + puerto);
+    }
 
-        // Iniciar el respaldo automático cada 2 minutos
-        scheduler = Executors.newScheduledThreadPool(1);
-        scheduler.scheduleAtFixedRate(this::crearRespaldoAutoguardado, 0, 2, TimeUnit.MINUTES);
-
-        try {
-            ServerSocket socketServidor = new ServerSocket(5000); // Crear el servidor en el puerto 5000
-            System.out.println("Servidor iniciado en el puerto 5000...");
-
-            while (true) {
-                
-                Socket cliente = socketServidor.accept();
-
-                // Crear un nuevo HiloDeCliente con el socket
-                HiloDeCliente nuevoCliente = new HiloDeCliente(cliente);
-                Thread hilo = new Thread(nuevoCliente);
-                hilo.start();
+    private void iniciarServidorHeartbeat() {
+        Thread heartbeatThread = new Thread(() -> {
+            while (ejecutando) {
+                try {
+                    Thread.sleep(HEARTBEAT_INTERVAL);
+                    enviarHeartbeatAClientes();
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    break;
+                }
             }
-        } catch (Exception e) {
+        });
+        heartbeatThread.setDaemon(true);
+        heartbeatThread.start();
+    }
+
+    private void enviarHeartbeatAClientes() {
+        synchronized (hilosClientes) {
+            for (HiloDeCliente cliente : hilosClientes) {
+                try {
+                    cliente.enviarHeartbeat();
+                } catch (IOException e) {
+                    // El cliente probablemente se desconectó
+                    eliminarCliente(cliente);
+                }
+            }
+        }
+    }
+
+    private void aceptarClientes() {
+        Thread acceptThread = new Thread(() -> {
+            while (ejecutando) {
+                try {
+                    Socket cliente = socketServidor.accept();
+                    HiloDeCliente nuevoCliente = new HiloDeCliente(cliente, esPrimario);
+                    Thread hilo = new Thread(nuevoCliente);
+                    hilo.start();
+                } catch (IOException e) {
+                    if (ejecutando) {
+                        System.err.println("Error aceptando cliente: " + e.getMessage());
+                    }
+                }
+            }
+        });
+        acceptThread.start();
+    }
+
+    public void detener() {
+        ejecutando = false;
+        try {
+            socketServidor.close();
+        } catch (IOException e) {
             e.printStackTrace();
         }
+        scheduler.shutdown();
     }
 
     private void cargarUsuariosDesdeArchivo() {
@@ -307,6 +369,11 @@ public class ServidorChat {
         } else {
             return "El usuario no existe.";
         }
+    }
+
+    private void iniciarRespaldoAutomatico() {
+        scheduler = Executors.newScheduledThreadPool(1);
+        scheduler.scheduleAtFixedRate(this::crearRespaldoAutoguardado, 0, 1, TimeUnit.HOURS);
     }
 
     private void crearRespaldoAutoguardado() {

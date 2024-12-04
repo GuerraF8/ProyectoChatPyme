@@ -14,21 +14,25 @@ public class HiloDeCliente implements Runnable {
     private ObjectInputStream entrada;
     private ObjectOutputStream salida;
     private Usuario usuario;
-
+    private final boolean servidorPrimario;
     // Para el historial de mensajes
     private Map<String, List<Mensaje>> historialMensajes = new HashMap<>();
     private Set<String> usuariosChatPrivado = new HashSet<>();
 
-    public HiloDeCliente(Socket socket) {
+    public HiloDeCliente(Socket socket, boolean esPrimario) {
         this.socket = socket;
+        this.servidorPrimario = esPrimario;
         try {
             salida = new ObjectOutputStream(socket.getOutputStream());
             entrada = new ObjectInputStream(socket.getInputStream());
-        } catch (Exception e) {
+        } catch (IOException e) {
             e.printStackTrace();
         }
     }
-
+    public void enviarHeartbeat() throws IOException {
+        salida.writeObject("/heartbeat");
+        salida.flush();
+    }
     public Usuario getUsuario() {
         return usuario;
     }
@@ -36,11 +40,12 @@ public class HiloDeCliente implements Runnable {
     public void run() {
         try {
             boolean autenticado = false;
-            while (!autenticado) {
+            while (!autenticado && socket.isConnected()) {
                 Object obj = entrada.readObject();
                 if (obj instanceof String) {
                     String mensajeInicial = (String) obj;
-                    if (mensajeInicial.startsWith("/login ")) {
+                    if (mensajeInicial.startsWith("/login ") || 
+                        mensajeInicial.startsWith("/reconectar ")) {
                         String[] partes = mensajeInicial.split(" ", 3);
                         String nombreUsuario = partes[1];
                         String contrasena = partes[2];

@@ -15,6 +15,7 @@ public class PanelCliente {
     private String salaActual;
     private ControlCliente controlCliente;
     private JFrame ventana;
+    private JLabel labelEstadoConexion;
 
     
     private Map<String, StyledDocument> documentosSalas = new HashMap<>();
@@ -315,5 +316,13 @@ public class PanelCliente {
     private void toggleUnderline() {
         boolean isUnderline = StyleConstants.isUnderline(atributos);
         StyleConstants.setUnderline(atributos, !isUnderline);
+    }
+
+    public void actualizarEstadoConexion(boolean conectado) {
+        if (labelEstadoConexion != null) {
+            labelEstadoConexion.setText("Estado: " + 
+                (conectado ? "Conectado" : "Desconectado - Intentando reconectar..."));
+            labelEstadoConexion.setForeground(conectado ? Color.GREEN : Color.RED);
+        }
     }
 }

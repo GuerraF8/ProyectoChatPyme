@@ -4,6 +4,11 @@ import java.net.Socket;
 import javax.swing.*;
 
 public class ControlCliente implements Runnable, ActionListener {
+    private static final int MAX_REINTENTOS = 3;
+    private static final long TIEMPO_RECONEXION = 5000;
+    private static final long HEARTBEAT_TIMEOUT = 10000; // 10 segundos
+    private long ultimoHeartbeat;
+    
     private Socket socket;
     private ObjectInputStream entrada;
     private ObjectOutputStream salida;
@@ -11,15 +16,99 @@ public class ControlCliente implements Runnable, ActionListener {
     private String contrasena;
     private String perfil;
     private boolean necesitaCambiarContrasena;
-    private String area; 
+    private String area;
     private PanelCliente panel;
+    private volatile boolean conectado = false;
+    private volatile boolean intentandoReconectar = false;
+    private int puertoActual = ServidorChat.PUERTO_PRIMARIO;
 
     // Constructor que acepta un Socket como parámetro
+    public void conectarAlServidor() {
+        try {
+            if (socket != null) {
+                try {
+                    socket.close();
+                } catch (IOException e) {
+                    // Ignorar errores al cerrar el socket
+                }
+            }
+            
+            socket = new Socket("localhost", puertoActual);
+            socket.setKeepAlive(true);
+            socket.setSoTimeout((int)HEARTBEAT_TIMEOUT);
+            
+            salida = new ObjectOutputStream(socket.getOutputStream());
+            entrada = new ObjectInputStream(socket.getInputStream());
+            
+            conectado = true;
+            ultimoHeartbeat = System.currentTimeMillis();
+            
+            if (panel != null) {
+                SwingUtilities.invokeLater(() -> 
+                    panel.actualizarEstadoConexion(true));
+            }
+            
+            // Si ya estábamos autenticados, enviar credenciales
+            if (nombreUsuario != null) {
+                salida.writeObject("/reconectar " + nombreUsuario + " " + contrasena);
+                salida.flush();
+            }
+            
+            System.out.println("Conectado exitosamente al servidor en puerto " + puertoActual);
+            return; // Salir del método si la conexión fue exitosa
+        } catch (IOException e) {
+            System.out.println("Error al conectar con el servidor en puerto " + puertoActual + ": " + e.getMessage());
+            conectado = false;
+            throw new RuntimeException(e); // Propagar la excepción para manejarla en manejarErrorConexion
+        }
+    }
+
+    private void manejarErrorConexion() {
+        conectado = false;
+        if (!intentandoReconectar) {
+            intentandoReconectar = true;
+            if (panel != null) {
+                SwingUtilities.invokeLater(() -> 
+                    panel.actualizarEstadoConexion(false));
+            }
+            
+            new Thread(() -> {
+                while (!conectado && !Thread.currentThread().isInterrupted()) {
+                    try {
+                        Thread.sleep(TIEMPO_RECONEXION);
+                        
+                        // Intentar con el puerto actual
+                        try {
+                            System.out.println("Intentando conectar al puerto " + puertoActual);
+                            conectarAlServidor();
+                        } catch (Exception e) {
+                            // Si falla, cambiar al otro puerto
+                            puertoActual = (puertoActual == ServidorChat.PUERTO_PRIMARIO) ? 
+                                          ServidorChat.PUERTO_SECUNDARIO : 
+                                          ServidorChat.PUERTO_PRIMARIO;
+                            System.out.println("Cambiando al puerto " + puertoActual);
+                            try {
+                                conectarAlServidor();
+                            } catch (Exception ex) {
+                                System.out.println("No se pudo conectar a ningún servidor");
+                            }
+                        }
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        break;
+                    }
+                }
+                intentandoReconectar = false;
+            }).start();
+        }
+    }
+
     public ControlCliente(Socket socket) {
         try {
             this.socket = socket;
             salida = new ObjectOutputStream(socket.getOutputStream());
             entrada = new ObjectInputStream(socket.getInputStream());
+            conectado = true; // Establecer conectado = true en el constructor
 
             realizarLogin();
 
@@ -28,16 +117,14 @@ public class ControlCliente implements Runnable, ActionListener {
             }
 
             creaYVisualizaVentana();
-
-            // Añadir ActionListener al panel
             panel.addActionListener(this);
 
-            // Iniciar el hilo para recibir mensajes
             Thread hilo = new Thread(this);
             hilo.start();
 
         } catch (Exception e) {
             e.printStackTrace();
+            conectado = false;
         }
     }
 
@@ -94,25 +181,43 @@ public class ControlCliente implements Runnable, ActionListener {
 
     @Override
     public void actionPerformed(ActionEvent evento) {
+        if (!conectado) {
+            JOptionPane.showMessageDialog(panel.getVentana(), 
+                "No hay conexión con el servidor. El mensaje se enviará cuando se restablezca la conexión.",
+                "Sin conexión",
+                JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+
         try {
             String sala = panel.getSalaActual();
             Mensaje mensaje = panel.getMensaje();
 
             if (mensaje.getTexto() != null && !mensaje.getTexto().isEmpty()) {
-                if (sala.equals("Urgencia")) {
-                    mensaje = new Mensaje("/mensaje_urgencia " + mensaje.getTexto(), mensaje.getAtributos());
-                    salida.writeObject(mensaje);
-                } else if (sala.equals("Medicos")) {
-                    mensaje = new Mensaje("/mensaje_sala Medicos " + mensaje.getTexto(), mensaje.getAtributos());
-                    salida.writeObject(mensaje);
-                } else if (sala.equals("Enviar a Medico")) {
-                    String destinatario = JOptionPane.showInputDialog("Ingrese el nombre de usuario del Medico:");
-                    mensaje = new Mensaje("/mensaje_privado " + destinatario + " " + mensaje.getTexto(),
-                            mensaje.getAtributos());
-                    salida.writeObject(mensaje);
-                } else {
-                    mensaje = new Mensaje("/mensaje_sala " + sala + " " + mensaje.getTexto(), mensaje.getAtributos());
-                    salida.writeObject(mensaje);
+                synchronized(salida) {
+                    try {
+                        if (sala.equals("Urgencia")) {
+                            mensaje = new Mensaje("/mensaje_urgencia " + mensaje.getTexto(), mensaje.getAtributos());
+                        } else if (sala.equals("Medicos")) {
+                            mensaje = new Mensaje("/mensaje_sala Medicos " + mensaje.getTexto(), mensaje.getAtributos());
+                        } else if (sala.equals("Enviar a Medico")) {
+                            String destinatario = JOptionPane.showInputDialog("Ingrese el nombre de usuario del Medico:");
+                            if (destinatario != null && !destinatario.isEmpty()) {
+                                mensaje = new Mensaje("/mensaje_privado " + destinatario + " " + mensaje.getTexto(), 
+                                    mensaje.getAtributos());
+                            } else {
+                                return;
+                            }
+                        } else {
+                            mensaje = new Mensaje("/mensaje_sala " + sala + " " + mensaje.getTexto(), 
+                                mensaje.getAtributos());
+                        }
+                        salida.writeObject(mensaje);
+                        salida.flush();
+                    } catch (IOException e) {
+                        manejarErrorConexion();
+                        throw e; // Propagar la excepción para reintentar el envío después
+                    }
                 }
             }
         } catch (Exception e) {
@@ -123,86 +228,106 @@ public class ControlCliente implements Runnable, ActionListener {
     @Override
     public void run() {
         try {
+            ultimoHeartbeat = System.currentTimeMillis();
             while (true) {
-                Object obj = entrada.readObject();
-    
-                if (obj instanceof String) {
-                    String mensaje = (String) obj;
-    
-                    if (mensaje.startsWith("/admin_usuario_creado")) {
-                        JOptionPane.showMessageDialog(panel.getVentana(), "Usuario creado exitosamente.");
-                    } else if (mensaje.startsWith("/admin_usuario_existente")) {
-                        JOptionPane.showMessageDialog(panel.getVentana(), "El nombre de usuario ya existe.", "Error",
-                                JOptionPane.ERROR_MESSAGE);
-                    } else if (mensaje.startsWith("/admin_contrasena_reiniciada")) {
-                        JOptionPane.showMessageDialog(panel.getVentana(), "Contraseña reiniciada exitosamente.");
-                    } else if (mensaje.startsWith("/admin_usuario_no_existente")) {
-                        JOptionPane.showMessageDialog(panel.getVentana(), "El usuario no existe.", "Error",
-                                JOptionPane.ERROR_MESSAGE);
-                    } else if (mensaje.startsWith("/admin_lista_usuarios ")) {
-                        String usuariosStr = mensaje.substring(21);
-                        String[] usuariosArray = usuariosStr.split(";");
-                        StringBuilder sb = new StringBuilder();
-                        sb.append("Usuarios Registrados:\n");
-                        for (String usuarioInfo : usuariosArray) {
-                            if (!usuarioInfo.isEmpty()) {
-                                String[] info = usuarioInfo.split(",");
-                                sb.append("- ").append(info[0]).append(" (").append(info[1]).append(")\n");
-                            }
-                        }
-                        JTextArea areaTexto = new JTextArea(sb.toString());
-                        areaTexto.setEditable(false);
-                        JScrollPane scrollPane = new JScrollPane(areaTexto);
-    
-                        JOptionPane.showMessageDialog(panel.getVentana(), scrollPane, "Lista de Usuarios",
-                                JOptionPane.INFORMATION_MESSAGE);
-                    } else if (mensaje.startsWith("/admin_estadisticas ")) {
-                        String estadisticas = mensaje.substring(19);
-                        JTextArea areaTexto = new JTextArea(estadisticas);
-                        areaTexto.setEditable(false);
-                        JScrollPane scrollPane = new JScrollPane(areaTexto);
-    
-                        JOptionPane.showMessageDialog(panel.getVentana(), scrollPane, "Estadísticas de Usuario",
-                                JOptionPane.INFORMATION_MESSAGE);
-                    } else if (mensaje.equals("/preguntar_historial")) {
-                        int opcion = JOptionPane.showConfirmDialog(panel.getVentana(),
-                                "¿Desea cargar su historial de conversaciones?", "Historial",
-                                JOptionPane.YES_NO_OPTION);
-                        if (opcion == JOptionPane.YES_OPTION) {
-                            salida.writeObject("/cargar_historial");
-                        } else {
-                            salida.writeObject("/no_cargar_historial");
-                        }
-                    } else if (mensaje.startsWith("/lista_usuarios_conectados")) {
-                        String listaUsuarios = mensaje.substring(25).trim();
-                        if (listaUsuarios.startsWith("s ")) {
-                            listaUsuarios = listaUsuarios.substring(2);
-                        }
-                        if (listaUsuarios.isEmpty()) {
-                            listaUsuarios = "Ninguno";
-                        }
-                        JTextArea areaTexto = new JTextArea(listaUsuarios);
-                        areaTexto.setEditable(false);
-                        JScrollPane scrollPane = new JScrollPane(areaTexto);
-                    
-                        JOptionPane.showMessageDialog(panel.getVentana(), scrollPane, "Usuarios Conectados",
-                                JOptionPane.INFORMATION_MESSAGE);
-                    }else if (mensaje.equals("/limpiar_chat")) {
-                        panel.limpiarChat();
-                    } else if (mensaje.startsWith("[Sistema] ")) {
-                        // Mostrar notificación del sistema
-                        JOptionPane.showMessageDialog(panel.getVentana(), mensaje.substring(10), "Notificación",
-                                JOptionPane.INFORMATION_MESSAGE);
-                    } else {
-                        panel.addTexto(mensaje, null);
+                try {
+                    if (System.currentTimeMillis() - ultimoHeartbeat > HEARTBEAT_TIMEOUT && conectado) {
+                        // No se ha recibido heartbeat en el tiempo establecido
+                        manejarErrorConexion();
+                        continue;
                     }
-                } else if (obj instanceof Mensaje) {
-                    Mensaje mensaje = (Mensaje) obj;
-                    System.out.println("Mensaje objeto recibido: " + mensaje.getTexto()); // Debug
-                    panel.addTexto(mensaje.getTexto(), mensaje.getAtributos());
+
+                    Object obj = entrada.readObject();
+                    if (obj instanceof String) {
+                        String mensaje = (String) obj;
+                        if (mensaje.equals("/heartbeat")) {
+                            ultimoHeartbeat = System.currentTimeMillis();
+                            conectado = true;
+                            continue;
+                        }
+                        if (mensaje.startsWith("/admin_usuario_creado")) {
+                            JOptionPane.showMessageDialog(panel.getVentana(), "Usuario creado exitosamente.");
+                        } else if (mensaje.startsWith("/admin_usuario_existente")) {
+                            JOptionPane.showMessageDialog(panel.getVentana(), "El nombre de usuario ya existe.", "Error",
+                                    JOptionPane.ERROR_MESSAGE);
+                        } else if (mensaje.startsWith("/admin_contrasena_reiniciada")) {
+                            JOptionPane.showMessageDialog(panel.getVentana(), "Contraseña reiniciada exitosamente.");
+                        } else if (mensaje.startsWith("/admin_usuario_no_existente")) {
+                            JOptionPane.showMessageDialog(panel.getVentana(), "El usuario no existe.", "Error",
+                                    JOptionPane.ERROR_MESSAGE);
+                        } else if (mensaje.startsWith("/admin_lista_usuarios ")) {
+                            String usuariosStr = mensaje.substring(21);
+                            String[] usuariosArray = usuariosStr.split(";");
+                            StringBuilder sb = new StringBuilder();
+                            sb.append("Usuarios Registrados:\n");
+                            for (String usuarioInfo : usuariosArray) {
+                                if (!usuarioInfo.isEmpty()) {
+                                    String[] info = usuarioInfo.split(",");
+                                    sb.append("- ").append(info[0]).append(" (").append(info[1]).append(")\n");
+                                }
+                            }
+                            JTextArea areaTexto = new JTextArea(sb.toString());
+                            areaTexto.setEditable(false);
+                            JScrollPane scrollPane = new JScrollPane(areaTexto);
+        
+                            JOptionPane.showMessageDialog(panel.getVentana(), scrollPane, "Lista de Usuarios",
+                                    JOptionPane.INFORMATION_MESSAGE);
+                        } else if (mensaje.startsWith("/admin_estadisticas ")) {
+                            String estadisticas = mensaje.substring(19);
+                            JTextArea areaTexto = new JTextArea(estadisticas);
+                            areaTexto.setEditable(false);
+                            JScrollPane scrollPane = new JScrollPane(areaTexto);
+        
+                            JOptionPane.showMessageDialog(panel.getVentana(), scrollPane, "Estadísticas de Usuario",
+                                    JOptionPane.INFORMATION_MESSAGE);
+                        } else if (mensaje.equals("/preguntar_historial")) {
+                            int opcion = JOptionPane.showConfirmDialog(panel.getVentana(),
+                                    "¿Desea cargar su historial de conversaciones?", "Historial",
+                                    JOptionPane.YES_NO_OPTION);
+                            if (opcion == JOptionPane.YES_OPTION) {
+                                salida.writeObject("/cargar_historial");
+                            } else {
+                                salida.writeObject("/no_cargar_historial");
+                            }
+                        } else if (mensaje.startsWith("/lista_usuarios_conectados")) {
+                            String listaUsuarios = mensaje.substring(25).trim();
+                            if (listaUsuarios.startsWith("s ")) {
+                                listaUsuarios = listaUsuarios.substring(2);
+                            }
+                            if (listaUsuarios.isEmpty()) {
+                                listaUsuarios = "Ninguno";
+                            }
+                            JTextArea areaTexto = new JTextArea(listaUsuarios);
+                            areaTexto.setEditable(false);
+                            JScrollPane scrollPane = new JScrollPane(areaTexto);
+                        
+                            JOptionPane.showMessageDialog(panel.getVentana(), scrollPane, "Usuarios Conectados",
+                                    JOptionPane.INFORMATION_MESSAGE);
+                        }else if (mensaje.equals("/limpiar_chat")) {
+                            panel.limpiarChat();
+                        } else if (mensaje.startsWith("[Sistema] ")) {
+                            // Mostrar notificación del sistema
+                            JOptionPane.showMessageDialog(panel.getVentana(), mensaje.substring(10), "Notificación",
+                                    JOptionPane.INFORMATION_MESSAGE);
+                        } else {
+                            panel.addTexto(mensaje, null);
+                        }
+                    } else if (obj instanceof Mensaje) {
+                        Mensaje mensaje = (Mensaje) obj;
+                        System.out.println("Mensaje objeto recibido: " + mensaje.getTexto()); // Debug
+                        panel.addTexto(mensaje.getTexto(), mensaje.getAtributos());
+                    }
+                    
+                } catch (IOException e) {
+                    if (conectado) {
+                        manejarErrorConexion();
+                    }
+                    if (!conectado) {
+                        Thread.sleep(1000); // Evitar consumo excesivo de CPU
+                    }
                 }
-            }
-        } catch (Exception e) {
+        }
+    } catch (Exception e) {
             e.printStackTrace();
         }
     }
@@ -235,4 +360,5 @@ public class ControlCliente implements Runnable, ActionListener {
     public String getArea() {
         return area;
     }
+
 }
