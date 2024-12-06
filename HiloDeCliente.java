@@ -25,10 +25,9 @@ public class HiloDeCliente implements Runnable {
         this.servidorPrimario = esPrimario;
         try {
             socket.setSoTimeout(0);
-            // First create output stream and flush
+
             this.salida = new ObjectOutputStream(socket.getOutputStream());
             this.salida.flush();
-            // Then create input stream
             this.entrada = new ObjectInputStream(socket.getInputStream());
         } catch (IOException e) {
             e.printStackTrace();

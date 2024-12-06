@@ -29,7 +29,7 @@ public class ControlCliente implements Runnable, ActionListener {
                 try {
                     socket.close();
                 } catch (IOException e) {
-                    // Ignore closing errors
+                   
                 }
             }
             
@@ -37,10 +37,10 @@ public class ControlCliente implements Runnable, ActionListener {
             socket.setKeepAlive(true);
             socket.setSoTimeout(0);
             
-            // First create output stream and flush
+            
             salida = new ObjectOutputStream(socket.getOutputStream());
             salida.flush();
-            // Then create input stream
+            
             entrada = new ObjectInputStream(socket.getInputStream());
             
             conectado = true;
@@ -326,7 +326,7 @@ public class ControlCliente implements Runnable, ActionListener {
                         manejarErrorConexion();
                     }
                     if (!conectado) {
-                        Thread.sleep(1000); // Evitar consumo excesivo de CPU
+                        Thread.sleep(1000); 
                     }
                 }
         }

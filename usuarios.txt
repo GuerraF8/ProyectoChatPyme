@@ -8,3 +8,33 @@ Martin,123,123,123,1234,Administrativo,false,Auxiliar
 Juan,juan_perez,11111111111,juanperez@gmail.com,JuanPerez,Medico,false
 Pabellon1,dasdas,2312,sdas,1234,Administrativo,false,Pabellon
 auxiliar1,aux,123,123,1234,Administrativo,false,Auxiliar
+usuario1,Usuario Uno,12345678-1,usuario1@hospital.cl,usuario1,Medico,true,Pabellon
+usuario2,Usuario Dos,12345678-2,usuario2@hospital.cl,usuario2,Administrativo,true,Auxiliar
+usuario3,Usuario Tres,12345678-3,usuario3@hospital.cl,usuario3,Medico,true,Pabellon
+usuario4,Usuario Cuatro,12345678-4,usuario4@hospital.cl,usuario4,Administrativo,true,Auxiliar
+usuario5,Usuario Cinco,12345678-5,usuario5@hospital.cl,usuario5,Medico,true,Pabellon
+usuario6,Usuario Seis,12345678-6,usuario6@hospital.cl,usuario6,Administrativo,true,Auxiliar
+usuario7,Usuario Siete,12345678-7,usuario7@hospital.cl,usuario7,Medico,true,Pabellon
+usuario8,Usuario Ocho,12345678-8,usuario8@hospital.cl,usuario8,Administrativo,true,Auxiliar
+usuario9,Usuario Nueve,12345678-9,usuario9@hospital.cl,usuario9,Medico,true,Pabellon
+usuario10,Usuario Diez,12345678-10,usuario10@hospital.cl,usuario10,Administrativo,true,Auxiliar
+usuario11,Usuario Once,12345678-11,usuario11@hospital.cl,usuario11,Medico,true,Pabellon
+usuario12,Usuario Doce,12345678-12,usuario12@hospital.cl,usuario12,Administrativo,true,Auxiliar
+usuario13,Usuario Trece,12345678-13,usuario13@hospital.cl,usuario13,Medico,true,Pabellon
+usuario14,Usuario Catorce,12345678-14,usuario14@hospital.cl,usuario14,Administrativo,true,Auxiliar
+usuario15,Usuario Quince,12345678-15,usuario15@hospital.cl,usuario15,Medico,true,Pabellon
+usuario16,Usuario Dieciseis,12345678-16,usuario16@hospital.cl,usuario16,Administrativo,true,Auxiliar
+usuario17,Usuario Diecisiete,12345678-17,usuario17@hospital.cl,usuario17,Medico,true,Pabellon
+usuario18,Usuario Dieciocho,12345678-18,usuario18@hospital.cl,usuario18,Administrativo,true,Auxiliar
+usuario19,Usuario Diecinueve,12345678-19,usuario19@hospital.cl,usuario19,Medico,true,Pabellon
+usuario20,Usuario Veinte,12345678-20,usuario20@hospital.cl,usuario20,Administrativo,true,Auxiliar
+usuario21,Usuario Veintiuno,12345678-21,usuario21@hospital.cl,usuario21,Medico,true,Pabellon
+usuario22,Usuario Veintidos,12345678-22,usuario22@hospital.cl,usuario22,Administrativo,true,Auxiliar
+usuario23,Usuario Veintitres,12345678-23,usuario23@hospital.cl,usuario23,Medico,true,Pabellon
+usuario24,Usuario Veinticuatro,12345678-24,usuario24@hospital.cl,usuario24,Administrativo,true,Auxiliar
+usuario25,Usuario Veinticinco,12345678-25,usuario25@hospital.cl,usuario25,Medico,true,Pabellon
+usuario26,Usuario Veintiseis,12345678-26,usuario26@hospital.cl,usuario26,Administrativo,true,Auxiliar
+usuario27,Usuario Veintisiete,12345678-27,usuario27@hospital.cl,usuario27,Medico,true,Pabellon
+usuario28,Usuario Veintiocho,12345678-28,usuario28@hospital.cl,usuario28,Administrativo,true,Auxiliar
+usuario29,Usuario Veintinueve,12345678-29,usuario29@hospital.cl,usuario29,Medico,true,Pabellon
+usuario30,Usuario Treinta,12345678-30,usuario30@hospital.cl,usuario30,Administrativo,true,Auxiliar
