@@ -6,7 +6,7 @@ import javax.swing.*;
 public class ControlCliente implements Runnable, ActionListener {
     private static final int MAX_REINTENTOS = 3;
     private static final long TIEMPO_RECONEXION = 5000;
-    private static final long HEARTBEAT_TIMEOUT = 10000; // 10 segundos
+    private static final long HEARTBEAT_TIMEOUT = 15000; // Aumentar a 15 segundos
     private long ultimoHeartbeat;
     
     private Socket socket;
@@ -35,7 +35,7 @@ public class ControlCliente implements Runnable, ActionListener {
             
             socket = new Socket("localhost", puertoActual);
             socket.setKeepAlive(true);
-            socket.setSoTimeout((int)HEARTBEAT_TIMEOUT);
+            socket.setSoTimeout(0);
             
             salida = new ObjectOutputStream(socket.getOutputStream());
             entrada = new ObjectInputStream(socket.getInputStream());
@@ -48,18 +48,19 @@ public class ControlCliente implements Runnable, ActionListener {
                     panel.actualizarEstadoConexion(true));
             }
             
-            // Si ya estábamos autenticados, enviar credenciales
+            // Si ya estábamos autenticados, enviar credenciales actualizadas
             if (nombreUsuario != null) {
-                salida.writeObject("/reconectar " + nombreUsuario + " " + contrasena);
+                if (necesitaCambiarContrasena) {
+                    salida.writeObject("/login " + nombreUsuario + " " + contrasena);
+                } else {
+                    salida.writeObject("/reconectar " + nombreUsuario + " " + contrasena);
+                }
                 salida.flush();
             }
-            
-            System.out.println("Conectado exitosamente al servidor en puerto " + puertoActual);
-            return; // Salir del método si la conexión fue exitosa
         } catch (IOException e) {
             System.out.println("Error al conectar con el servidor en puerto " + puertoActual + ": " + e.getMessage());
             conectado = false;
-            throw new RuntimeException(e); // Propagar la excepción para manejarla en manejarErrorConexion
+            throw new RuntimeException(e);
         }
     }
 
@@ -77,20 +78,18 @@ public class ControlCliente implements Runnable, ActionListener {
                     try {
                         Thread.sleep(TIEMPO_RECONEXION);
                         
-                        // Intentar con el puerto actual
-                        try {
-                            System.out.println("Intentando conectar al puerto " + puertoActual);
-                            conectarAlServidor();
-                        } catch (Exception e) {
-                            // Si falla, cambiar al otro puerto
-                            puertoActual = (puertoActual == ServidorChat.PUERTO_PRIMARIO) ? 
-                                          ServidorChat.PUERTO_SECUNDARIO : 
-                                          ServidorChat.PUERTO_PRIMARIO;
-                            System.out.println("Cambiando al puerto " + puertoActual);
+                        // Intentar ambos puertos alternadamente
+                        for (int puerto : new int[]{ServidorChat.PUERTO_SECUNDARIO, ServidorChat.PUERTO_PRIMARIO}) {
                             try {
+                                System.out.println("Intentando conectar al puerto " + puerto);
+                                puertoActual = puerto;
                                 conectarAlServidor();
-                            } catch (Exception ex) {
-                                System.out.println("No se pudo conectar a ningún servidor");
+                                if (conectado) {
+                                    System.out.println("Conexión establecida con el puerto " + puerto);
+                                    break;
+                                }
+                            } catch (Exception e) {
+                                System.out.println("Error al conectar con el puerto " + puerto + ": " + e.getMessage());
                             }
                         }
                     } catch (InterruptedException e) {
@@ -172,6 +171,8 @@ public class ControlCliente implements Runnable, ActionListener {
         if (respuestaObj instanceof String) {
             String respuesta = (String) respuestaObj;
             if (respuesta.equals("/contrasena_cambiada")) {
+                this.contrasena = nuevaContrasena; // Actualizar la contraseña almacenada
+                necesitaCambiarContrasena = false;
                 JOptionPane.showMessageDialog(null, "Contraseña cambiada exitosamente.");
             } else {
                 JOptionPane.showMessageDialog(null, "Error al cambiar la contraseña.");
@@ -359,6 +360,10 @@ public class ControlCliente implements Runnable, ActionListener {
 
     public String getArea() {
         return area;
+    }
+
+    public boolean estaConectado() {
+        return conectado;
     }
 
 }

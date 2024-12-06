@@ -1,5 +1,5 @@
 Felipe,Felipe Guerra,1010101,feffefe,1234,Administrativo,false,Examenes
-Damian,Damian Perez,21292541,example@gmail.com,12345,Medico,true
+Damian,Damian Perez,21292541,example@gmail.com,12345,Medico,false
 medico,Dr. Juan Pérez,12345678-9,juan.perez@hospital.cl,medico,Medico,false
 admin,Administrador,00000000-0,admin@hospital.cl,admin,Administrador,false
 Cris, Cristobal Nunez,11,cris@gmail.com,1234,Administrativo,false,Admision

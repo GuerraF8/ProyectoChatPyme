@@ -14,12 +14,15 @@ import java.util.zip.*;
 public class ServidorChat {
     public static final int PUERTO_PRIMARIO = 5000;
     public static final int PUERTO_SECUNDARIO = 5001;
-    private static final long HEARTBEAT_INTERVAL = 5000; // 5 segundos
+    private static final long HEARTBEAT_INTERVAL = 10000; // 10 segundos
+    private static final int INTER_SERVER_PORT_PRIMARIO = 6000;
+    private static final int INTER_SERVER_PORT_SECUNDARIO = 6001;
+    private volatile boolean aceptandoClientes = true;
     
     public static Map<String, Usuario> usuariosRegistrados = new HashMap<>();
     public static Map<String, HiloDeCliente> usuariosConectados = new HashMap<>();
     public static List<HiloDeCliente> hilosClientes = Collections.synchronizedList(new ArrayList<>());
-    private ScheduledExecutorService scheduler;
+    private ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
     private ServerSocket socketServidor;
     private boolean esPrimario;
     private volatile boolean ejecutando = true;
@@ -41,14 +44,87 @@ public class ServidorChat {
     public ServidorChat(int puerto) throws IOException {
         this.esPrimario = (puerto == PUERTO_PRIMARIO);
         this.socketServidor = new ServerSocket(puerto);
-        
+        this.aceptandoClientes = true; // Establecer explícitamente como true
+
         cargarUsuariosDesdeArchivo();
         iniciarRespaldoAutomatico();
         iniciarServidorHeartbeat();
-        aceptarClientes();
+        iniciarServidorInterServidor();
+        verificarOtroServidor();
+        iniciarVerificacionPeriodica();
         
-        System.out.println("Servidor " + (esPrimario ? "primario" : "secundario") + 
-                          " iniciado en puerto " + puerto);
+        System.out.println("Servidor " + (esPrimario ? "primario" : "secundario") + " iniciado en puerto " + puerto);
+        System.out.println("Estado de aceptación de clientes: " + aceptandoClientes);
+        
+        aceptarClientes();
+    }
+
+    private void iniciarServidorInterServidor() {
+        int interServerPort = esPrimario ? INTER_SERVER_PORT_PRIMARIO : INTER_SERVER_PORT_SECUNDARIO;
+        Thread interServerThread = new Thread(() -> {
+            try (ServerSocket interServerSocket = new ServerSocket(interServerPort)) {
+                while (ejecutando) {
+                    try {
+                        Socket socket = interServerSocket.accept();
+                        socket.setSoTimeout(2000);
+                        ObjectOutputStream salida = new ObjectOutputStream(socket.getOutputStream());
+                        ObjectInputStream entrada = new ObjectInputStream(socket.getInputStream());
+                        
+                        String request = (String) entrada.readObject();
+                        if ("/getClientCount".equals(request)) {
+                            salida.writeObject(hilosClientes.size());
+                        } else if ("/aceptaClientes".equals(request)) {
+                            salida.writeObject(aceptandoClientes);
+                        } else if ("/servidorDesconectado".equals(request)) {
+                            aceptandoClientes = true;
+                        }
+                    } catch (Exception e) {
+                        // Ignorar errores de timeout
+                    }
+                }
+            } catch (IOException e) {
+                System.out.println("Error en servidor inter-servidor: " + e.getMessage());
+            }
+        });
+        interServerThread.setDaemon(true);
+        interServerThread.start();
+    }
+
+    private void verificarOtroServidor() {
+        int otroInterServerPort = esPrimario ? INTER_SERVER_PORT_SECUNDARIO : INTER_SERVER_PORT_PRIMARIO;
+        try (Socket interServerSocket = new Socket("localhost", otroInterServerPort);
+             ObjectOutputStream salida = new ObjectOutputStream(interServerSocket.getOutputStream());
+             ObjectInputStream entrada = new ObjectInputStream(interServerSocket.getInputStream())) {
+            
+            salida.writeObject("/getClientCount");
+            Object respuesta = entrada.readObject();
+            if (respuesta instanceof Integer) {
+                int clientCount = (Integer) respuesta;
+                // Si es servidor secundario y el primario tiene clientes, no aceptar
+                if (!esPrimario && clientCount > 0) {
+                    aceptandoClientes = false;
+                } else {
+                    aceptandoClientes = true;
+                }
+                System.out.println("Otro servidor detectado con " + clientCount + " clientes. Estado de aceptación: " + aceptandoClientes);
+            }
+        } catch (IOException | ClassNotFoundException e) {
+            System.out.println("El otro servidor no está disponible. Aceptando conexiones.");
+            aceptandoClientes = true;
+        }
+    }
+
+    private void iniciarVerificacionPeriodica() {
+        scheduler.scheduleAtFixedRate(this::verificarOtroServidorPeriodicamente, 0, 10, TimeUnit.SECONDS);
+    }
+
+    private void verificarOtroServidorPeriodicamente() {
+        try {
+            verificarOtroServidor();
+        } catch (Exception e) {
+            System.out.println("Error en verificación periódica: " + e.getMessage());
+            aceptandoClientes = true;
+        }
     }
 
     private void iniciarServidorHeartbeat() {
@@ -56,7 +132,9 @@ public class ServidorChat {
             while (ejecutando) {
                 try {
                     Thread.sleep(HEARTBEAT_INTERVAL);
-                    enviarHeartbeatAClientes();
+                    synchronized(hilosClientes) {
+                        enviarHeartbeatAClientes();
+                    }
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                     break;
@@ -84,22 +162,43 @@ public class ServidorChat {
         Thread acceptThread = new Thread(() -> {
             while (ejecutando) {
                 try {
-                    Socket cliente = socketServidor.accept();
-                    HiloDeCliente nuevoCliente = new HiloDeCliente(cliente, esPrimario);
-                    Thread hilo = new Thread(nuevoCliente);
-                    hilo.start();
+                    if (aceptandoClientes) {
+                        Socket cliente = socketServidor.accept();
+                        cliente.setSoTimeout(5000); // Timeout de 5 segundos
+                        HiloDeCliente nuevoCliente = new HiloDeCliente(cliente, esPrimario);
+                        Thread hilo = new Thread(nuevoCliente);
+                        hilo.start();
+                        System.out.println("Nuevo cliente conectado en puerto " + 
+                            (esPrimario ? PUERTO_PRIMARIO : PUERTO_SECUNDARIO));
+                    } else {
+                        Thread.sleep(1000);
+                    }
                 } catch (IOException e) {
                     if (ejecutando) {
                         System.err.println("Error aceptando cliente: " + e.getMessage());
                     }
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
                 }
             }
         });
+        acceptThread.setDaemon(true);
         acceptThread.start();
     }
 
     public void detener() {
         ejecutando = false;
+        aceptandoClientes = false;
+        
+        // Notificar al otro servidor
+        int otroInterServerPort = esPrimario ? INTER_SERVER_PORT_SECUNDARIO : INTER_SERVER_PORT_PRIMARIO;
+        try (Socket interServerSocket = new Socket("localhost", otroInterServerPort);
+             ObjectOutputStream salida = new ObjectOutputStream(interServerSocket.getOutputStream())) {
+            salida.writeObject("/servidorDesconectado");
+        } catch (IOException e) {
+            // Ignorar si el otro servidor no está disponible
+        }
+        
         try {
             socketServidor.close();
         } catch (IOException e) {

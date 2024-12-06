@@ -288,16 +288,25 @@ public class PanelCliente {
             doc = new DefaultStyledDocument();
             documentosSalas.put(sala, doc);
             
-            int opcion = JOptionPane.showConfirmDialog(ventana,
-                "¿Desea cargar el historial de la sala " + sala + "?",
-                "Cargar Historial",
-                JOptionPane.YES_NO_OPTION);
-                
-            if (opcion == JOptionPane.YES_OPTION) {
-                textPane.setDocument(doc);
-                String comando = "/cargar_historial " + sala;
-                System.out.println("Enviando comando: " + comando); // Para debug
-                controlCliente.enviarMensajeAlServidor(comando);
+            // Verificar si hay conexión antes de preguntar por el historial
+            if (controlCliente.estaConectado()) {
+                int opcion = JOptionPane.showConfirmDialog(ventana,
+                    "¿Desea cargar el historial de la sala " + sala + "?",
+                    "Cargar Historial",
+                    JOptionPane.YES_NO_OPTION);
+                    
+                if (opcion == JOptionPane.YES_OPTION) {
+                    textPane.setDocument(doc);
+                    String comando = "/cargar_historial " + sala;
+                    System.out.println("Enviando comando: " + comando);
+                    controlCliente.enviarMensajeAlServidor(comando);
+                }
+            } else {
+                // Si no hay conexión, mostrar mensaje informativo
+                JOptionPane.showMessageDialog(ventana,
+                    "No se puede cargar el historial porque no hay conexión con el servidor.",
+                    "Sin conexión",
+                    JOptionPane.WARNING_MESSAGE);
             }
         }
         textPane.setDocument(doc);
@@ -324,5 +333,15 @@ public class PanelCliente {
                 (conectado ? "Conectado" : "Desconectado - Intentando reconectar..."));
             labelEstadoConexion.setForeground(conectado ? Color.GREEN : Color.RED);
         }
+        
+        // Si se recuperó la conexión, limpiar el caché de documentos para forzar
+        // la pregunta de carga de historiales nuevamente
+        if (conectado) {
+            documentosSalas.clear();
+            if (salaActual != null) {
+                cargarHistorialSala(salaActual);
+            }
+        }
     }
+
 }

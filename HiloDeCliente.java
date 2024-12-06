@@ -23,6 +23,7 @@ public class HiloDeCliente implements Runnable {
         this.socket = socket;
         this.servidorPrimario = esPrimario;
         try {
+            socket.setSoTimeout(0); // Sin timeout
             salida = new ObjectOutputStream(socket.getOutputStream());
             entrada = new ObjectInputStream(socket.getInputStream());
         } catch (IOException e) {
