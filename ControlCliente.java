@@ -29,15 +29,18 @@ public class ControlCliente implements Runnable, ActionListener {
                 try {
                     socket.close();
                 } catch (IOException e) {
-                    // Ignorar errores al cerrar el socket
+                    // Ignore closing errors
                 }
             }
             
-            socket = new Socket("localhost", puertoActual);
+            socket = new Socket("34.176.181.248", puertoActual);
             socket.setKeepAlive(true);
             socket.setSoTimeout(0);
             
+            // First create output stream and flush
             salida = new ObjectOutputStream(socket.getOutputStream());
+            salida.flush();
+            // Then create input stream
             entrada = new ObjectInputStream(socket.getInputStream());
             
             conectado = true;
@@ -48,13 +51,8 @@ public class ControlCliente implements Runnable, ActionListener {
                     panel.actualizarEstadoConexion(true));
             }
             
-            // Si ya estábamos autenticados, enviar credenciales actualizadas
             if (nombreUsuario != null) {
-                if (necesitaCambiarContrasena) {
-                    salida.writeObject("/login " + nombreUsuario + " " + contrasena);
-                } else {
-                    salida.writeObject("/reconectar " + nombreUsuario + " " + contrasena);
-                }
+                salida.writeObject("/login " + nombreUsuario + " " + contrasena);
                 salida.flush();
             }
         } catch (IOException e) {
@@ -139,11 +137,13 @@ public class ControlCliente implements Runnable, ActionListener {
 
             // Enviar credenciales al servidor
             salida.writeObject("/login " + nombreUsuario + " " + contrasena);
+            System.out.println("Enviando credenciales: " + nombreUsuario + " " + contrasena); // Debug statement
 
             // Esperar respuesta del servidor
             Object respuestaObj = entrada.readObject();
             if (respuestaObj instanceof String) {
                 String respuesta = (String) respuestaObj;
+                System.out.println("Respuesta del servidor: " + respuesta); // Debug statement
                 if (respuesta.startsWith("/login_ok")) {
                     autenticado = true;
                     String[] partes = respuesta.split(" ");
@@ -152,8 +152,10 @@ public class ControlCliente implements Runnable, ActionListener {
                     if (perfil.equals("Administrativo") && partes.length > 3) {
                         area = partes[3];
                     }
+                    System.out.println("Autenticación exitosa: " + nombreUsuario); // Debug statement
                 } else {
                     JOptionPane.showMessageDialog(null, "Credenciales incorrectas. Intente nuevamente.");
+                    System.out.println("Credenciales incorrectas: " + nombreUsuario); // Debug statement
                 }
             }
         }

@@ -22,7 +22,7 @@ public class ClienteChat {
             // Primero intentar conectar al servidor secundario
             if (servidorAceptaClientes(ServidorChat.PUERTO_SECUNDARIO)) {
                 try {
-                    socket = new Socket("localhost", ServidorChat.PUERTO_SECUNDARIO);
+                    socket = new Socket("34.176.181.248", ServidorChat.PUERTO_SECUNDARIO);
                     conectado = true;
                     System.out.println("Conectado al servidor secundario");
                 } catch (Exception e) {
@@ -33,7 +33,7 @@ public class ClienteChat {
             // Si no hay conexión al secundario, intentar con el primario
             if (!conectado && servidorAceptaClientes(ServidorChat.PUERTO_PRIMARIO)) {
                 try {
-                    socket = new Socket("localhost", ServidorChat.PUERTO_PRIMARIO);
+                    socket = new Socket("34.176.181.248", ServidorChat.PUERTO_PRIMARIO);
                     conectado = true;
                     System.out.println("Conectado al servidor primario");
                 } catch (Exception e) {
@@ -61,7 +61,7 @@ public class ClienteChat {
         int interServerPort = (puerto == ServidorChat.PUERTO_PRIMARIO) ? 6000 : 6001;
         try {
             // Primero verificar si el puerto principal está disponible
-            try (Socket testSocket = new Socket("localhost", puerto)) {
+            try (Socket testSocket = new Socket("34.176.181.248", puerto)) {
                 // El puerto está abierto, podemos intentar conectar
             } catch (IOException e) {
                 // Si el puerto no está disponible, retornar false
@@ -69,7 +69,7 @@ public class ClienteChat {
             }
     
             // Verificar el estado del servidor a través del puerto inter-servidor
-            Socket interServerSocket = new Socket("localhost", interServerPort);
+            Socket interServerSocket = new Socket("34.176.181.248", interServerPort);
             interServerSocket.setSoTimeout(2000);
             ObjectOutputStream salida = new ObjectOutputStream(interServerSocket.getOutputStream());
             ObjectInputStream entrada = new ObjectInputStream(interServerSocket.getInputStream());

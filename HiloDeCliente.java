@@ -18,16 +18,21 @@ public class HiloDeCliente implements Runnable {
     // Para el historial de mensajes
     private Map<String, List<Mensaje>> historialMensajes = new HashMap<>();
     private Set<String> usuariosChatPrivado = new HashSet<>();
+    private boolean autenticado = false;
 
     public HiloDeCliente(Socket socket, boolean esPrimario) {
         this.socket = socket;
         this.servidorPrimario = esPrimario;
         try {
-            socket.setSoTimeout(0); // Sin timeout
-            salida = new ObjectOutputStream(socket.getOutputStream());
-            entrada = new ObjectInputStream(socket.getInputStream());
+            socket.setSoTimeout(0);
+            // First create output stream and flush
+            this.salida = new ObjectOutputStream(socket.getOutputStream());
+            this.salida.flush();
+            // Then create input stream
+            this.entrada = new ObjectInputStream(socket.getInputStream());
         } catch (IOException e) {
             e.printStackTrace();
+            cerrarRecursos();
         }
     }
     public void enviarHeartbeat() throws IOException {
@@ -45,6 +50,7 @@ public class HiloDeCliente implements Runnable {
                 Object obj = entrada.readObject();
                 if (obj instanceof String) {
                     String mensajeInicial = (String) obj;
+                    System.out.println("Mensaje recibido del cliente: " + mensajeInicial); // Debug statement
                     if (mensajeInicial.startsWith("/login ") || 
                         mensajeInicial.startsWith("/reconectar ")) {
                         String[] partes = mensajeInicial.split(" ", 3);
@@ -61,6 +67,7 @@ public class HiloDeCliente implements Runnable {
                             }
                             salida.writeObject(respuesta);
                             autenticado = true;
+                            System.out.println("Usuario autenticado: " + nombreUsuario); // Debug statement
 
                             // Si no necesita cambiar contraseña, añadimos al cliente a las listas
                             if (!usuario.isNecesitaCambiarContrasena()) {
@@ -68,6 +75,7 @@ public class HiloDeCliente implements Runnable {
                             }
                         } else {
                             salida.writeObject("/login_fail");
+                            System.out.println("Fallo de autenticación para usuario: " + nombreUsuario); // Debug statement
                         }
                     }
                 }
@@ -99,7 +107,6 @@ public class HiloDeCliente implements Runnable {
 
             // Preguntar si desea cargar el historial
 
-
             while (true) {
                 Object obj = entrada.readObject();
                 if (obj instanceof Mensaje) {
@@ -112,20 +119,23 @@ public class HiloDeCliente implements Runnable {
                 }
             }
         } catch (Exception e) {
-            // e.printStackTrace();
+            e.printStackTrace();
         } finally {
-            // Cerrar recursos y eliminar cliente de las listas
-            try {
-                if (socket != null) socket.close();
-                if (entrada != null) entrada.close();
-                if (salida != null) salida.close();
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
+            cerrarRecursos();
             if (usuario != null) {
                 notificarDesconexion();
                 ServidorChat.eliminarCliente(this);
             }
+        }
+    }
+
+    private void cerrarRecursos() {
+        try {
+            if (socket != null) socket.close();
+            if (entrada != null) entrada.close();
+            if (salida != null) salida.close();
+        } catch (Exception e) {
+            e.printStackTrace();
         }
     }
 
@@ -170,7 +180,32 @@ public class HiloDeCliente implements Runnable {
 
     private void procesarComando(String mensaje) {
         try {
-            if (mensaje.startsWith("/admin_crear_usuario ")) {
+            if (mensaje.startsWith("/login ")) {
+                String[] partes = mensaje.split(" ", 3);
+                String nombreUsuario = partes[1];
+                String contrasena = partes[2];
+
+                // Verificar credenciales
+                Usuario usuarioRegistrado = ServidorChat.usuariosRegistrados.get(nombreUsuario);
+                if (usuarioRegistrado != null && usuarioRegistrado.getContrasena().equals(contrasena)) {
+                    usuario = usuarioRegistrado;
+                    String respuesta = "/login_ok " + usuario.getPerfil() + " " + usuario.isNecesitaCambiarContrasena();
+                    if (usuario.getPerfil().equals("Administrativo")) {
+                        respuesta += " " + usuario.getArea();
+                    }
+                    salida.writeObject(respuesta);
+                    autenticado = true;
+                    System.out.println("Usuario autenticado: " + nombreUsuario); // Debug statement
+
+                    // Si no necesita cambiar contraseña, añadimos al cliente a las listas
+                    if (!usuario.isNecesitaCambiarContrasena()) {
+                        agregarClienteALasListas();
+                    }
+                } else {
+                    salida.writeObject("/login_fail");
+                    System.out.println("Fallo de autenticación para usuario: " + nombreUsuario); // Debug statement
+                }
+            } else if (mensaje.startsWith("/admin_crear_usuario ")) {
                 // Leer los datos del nuevo usuario
                 String[] partes = mensaje.split(" ", 8);
                 String nombreUsuarioNuevo = partes[1];

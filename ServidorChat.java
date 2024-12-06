@@ -192,7 +192,7 @@ public class ServidorChat {
         
         // Notificar al otro servidor
         int otroInterServerPort = esPrimario ? INTER_SERVER_PORT_SECUNDARIO : INTER_SERVER_PORT_PRIMARIO;
-        try (Socket interServerSocket = new Socket("localhost", otroInterServerPort);
+        try (Socket interServerSocket = new Socket("34.176.181.248", otroInterServerPort);
              ObjectOutputStream salida = new ObjectOutputStream(interServerSocket.getOutputStream())) {
             salida.writeObject("/servidorDesconectado");
         } catch (IOException e) {
@@ -231,9 +231,9 @@ public class ServidorChat {
                     boolean necesitaCambiarContrasena = Boolean.parseBoolean(partes[6]);
                     String area = partes.length > 7 ? partes[7] : null;
 
-                    Usuario usuario = new Usuario(nombreUsuario, nombreCompleto, rut, correo, contrasena, perfil,
-                            necesitaCambiarContrasena, area);
+                    Usuario usuario = new Usuario(nombreUsuario, nombreCompleto, rut, correo, contrasena, perfil, necesitaCambiarContrasena, area);
                     usuariosRegistrados.put(nombreUsuario, usuario);
+                    System.out.println("Usuario cargado: " + nombreUsuario); // Debug statement
                 }
             } catch (IOException e) {
                 e.printStackTrace();
@@ -241,11 +241,10 @@ public class ServidorChat {
         }
 
         if (usuariosRegistrados.isEmpty()) {
-            
-            Usuario admin = new Usuario("admin", "Administrador", "00000000-0", "admin@hospital.cl", "admin",
-                    "Administrador", false, null);
+            Usuario admin = new Usuario("admin", "Administrador", "00000000-0", "admin@hospital.cl", "admin", "Administrador", false, null);
             usuariosRegistrados.put("admin", admin);
             guardarUsuarioEnArchivo(admin);
+            System.out.println("Usuario admin creado por defecto"); // Debug statement
         }
     }
 
